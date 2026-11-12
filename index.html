@@ -72,6 +72,37 @@
     ::-webkit-scrollbar-thumb:hover {
       background: #0284c7;
     }
+/* Row Hover Highlighting */
+#matrixTbody tr {
+  transition: transform 0.08s ease;
+}
+
+/* ไฮไลท์คอลัมน์ชื่อเครื่องจักรด้านซ้ายสุด */
+#matrixTbody tr:hover td.sticky-col {
+  background-color: #164e63 !important; /* สีฟ้าอมเขียวเข้ม (Cyan-900) */
+  color: #22d3ee !important; /* ตัวอักษรสว่างขึ้น */
+  box-shadow: inset 3px 0 0 #06b6d4, inset 0 1px 0 #22d3ee, inset 0 -1px 0 #22d3ee;
+}
+
+/* ไฮไลท์ทุกช่องในบรรทัดนั้น (ให้สว่างขึ้นและมีเส้นขอบบน-ล่างนำสายตา) */
+#matrixTbody tr:hover td:not(.sticky-col) {
+  filter: brightness(1.15);
+  box-shadow: inset 0 1.5px 0 rgba(6, 182, 212, 0.9), inset 0 -1.5px 0 rgba(6, 182, 212, 0.9);
+}
+
+/* เปลี่ยนสีช่องว่าง (สีขาว) ในแถวที่ชี้ให้เป็นสีฟ้าอ่อน จะได้เห็นเส้นนำสายตายาวตลอดแนว */
+#matrixTbody tr:hover td.cell-empty {
+  background-color: #cffafe !important; /* สีฟ้าอ่อน (Cyan-100) */
+  color: #0e7490 !important;
+}
+
+/* (ตัวเลือกเสริม) เน้นช่องที่เมาส์กำลังชี้อยู่ให้เด่นขึ้นอีกนิด */
+#matrixTbody td:not(.sticky-col):hover {
+  outline: 2px solid #ffffff;
+  outline-offset: -2px;
+  z-index: 10;
+  position: relative;
+}
   </style>
 </head>
 <body class="h-full flex flex-col bg-[#050b14] text-slate-100 overflow-hidden select-none">
