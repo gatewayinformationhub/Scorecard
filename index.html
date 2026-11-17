@@ -223,7 +223,7 @@
       <span class="text-slate-500">|</span>
       <span class="text-slate-300">Lines Displayed: <b id="displayedCount" class="text-cyan-400 font-num">0</b></span>
       <span class="hidden sm:inline text-slate-500">|</span>
-      <span class="hidden sm:inline text-slate-400">Data Source: <b id="dataSourceDisplay" class="text-slate-200">Consolidated_OR (Sheets)</b></span>
+      <span class="hidden sm:inline text-slate-400">Data Source: <b id="dataSourceDisplay" class="text-slate-200">OR Production by shift (Sheets)</b></span>
       <span class="hidden md:inline text-slate-500">|</span>
       <span class="hidden md:inline text-slate-400">Last Synced: <b id="lastSyncedTime" class="text-cyan-400 font-num">Initial Baseline</b></span>
     </div>
@@ -301,7 +301,7 @@
         <p class="text-slate-400 leading-relaxed">
           คัดลอกตารางจาก Google Sheets หรือ CSV มาวางเพื่ออัปเดตข้อมูลของโหมด <b id="pasteModalMetricBadge" class="text-cyan-300">OR</b>:
         </p>
-        <textarea id="pasteTextArea" rows="10" placeholder="Week&#9;Line&#9;Group&#9;...&#9;Value" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-xs font-mono text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500"></textarea>
+        <textarea id="pasteTextArea" rows="10" placeholder="DATE&#9;Week&#9;Plant&#9;LINE&#9;SHIFT&#9;PLAN&#9;ACTUAL" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-xs font-mono text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500"></textarea>
       </div>
 
       <div class="px-5 py-3 border-t border-slate-800 bg-slate-950 flex justify-end space-x-2">
@@ -322,13 +322,14 @@
     let countdownTimerSec = 60;
     let refreshIntervalHandle = null;
 
-    // Config for OR
-    const SPREADSHEET_ID = "1DjW4Y4IVtB9IAr4vksgw74t0WDG9mWS3k4iP7iI71kA";
-    const GID = "717074409";
+    // Config for OR ("OR Production by shift")
+    const SPREADSHEET_ID = "10p7sU2-9dpdeqZqnj3aoW7IOncCwqUrBeql5HrPxyJs";
+    const GID = "0";
     let orGlobalTarget = 98.0;
 
     // Config for OEE
     const GOOGLE_DRIVE_FILE_ID = "11Uk4OkJUSuxJmYUlbNDtAULyABZsnv26";
+    const OEE_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx33Yxk2e9qXTyJZSynKmKW50dH0VCBpoFWoRV6MRDr_T59TtIVGAWFzOx9IeOwZOe4CA/exec";
 
     // Common Factory Lines definition
     const FACTORY_LINES = [
@@ -1148,6 +1149,81 @@
 45,Syntegon-1,75,73.1
 45,Syntegon-2,62,53.3`;
 
+    // --- HELPER: CALCULATE WEEKLY OR FROM SHIFT RECORDS ---
+    // รวมข้อมูลรายกะ (Week, Plant, LINE, PLAN, ACTUAL) เป็นรายสัปดาห์
+    // สูตร: Abs Diff = |Total Actual - Total Plan| และ OR (%) = (1 - (Abs Diff / Total Plan)) * 100
+    function calculateWeeklyOrFromShifts(shiftRows) {
+      const agg = {};
+      let detectedMaxWk = orMaxWeek;
+      let validCount = 0;
+
+      shiftRows.forEach(item => {
+        const wk = parseInt(item.week, 10);
+        const rawLine = item.line;
+        const plant = (item.plant || '').toUpperCase().trim();
+        const plan = parseFloat(item.plan);
+        const actual = parseFloat(item.actual);
+
+        if (isNaN(wk) || wk <= 0 || !rawLine) return;
+        const planVal = isNaN(plan) ? 0 : plan;
+        const actVal = isNaN(actual) ? 0 : actual;
+
+        if (planVal === 0 && actVal === 0) return;
+
+        if (wk > detectedMaxWk) detectedMaxWk = wk;
+        const norm = normalizeLineName(rawLine);
+
+        if (!agg[norm]) agg[norm] = {};
+        if (!agg[norm][wk]) {
+          agg[norm][wk] = {
+            planSum: 0,
+            actSum: 0,
+            area: plant === 'LSDS' ? 'LSDS' : 'KN'
+          };
+        }
+
+        agg[norm][wk].planSum += planVal;
+        agg[norm][wk].actSum += actVal;
+        if (plant === 'KN' || plant === 'LSDS') {
+          agg[norm][wk].area = plant;
+        }
+        validCount++;
+      });
+
+      if (validCount > 0) {
+        orMaxWeek = detectedMaxWk;
+        Object.keys(agg).forEach(norm => {
+          if (!orDataset[norm]) {
+            const firstWkKey = Object.keys(agg[norm])[0];
+            const area = agg[norm][firstWkKey].area || 'KN';
+            orDataset[norm] = { name: norm, group: '', area: area, weeks: {}, details: {} };
+            orSelectedMachines.add(norm);
+            orTargets[norm] = orGlobalTarget;
+          }
+          if (!orDataset[norm].details) orDataset[norm].details = {};
+
+          Object.keys(agg[norm]).forEach(wkStr => {
+            const wk = parseInt(wkStr, 10);
+            const rec = agg[norm][wk];
+            if (rec.planSum > 0) {
+              const weeklyAbsDiff = Math.abs(rec.actSum - rec.planSum);
+              const orPct = Math.max(0, (1 - (weeklyAbsDiff / rec.planSum)) * 100);
+              
+              orDataset[norm].weeks[wk] = Number(orPct.toFixed(2));
+              orDataset[norm].details[wk] = {
+                plan: rec.planSum,
+                act: rec.actSum,
+                absDiff: weeklyAbsDiff
+              };
+            } else {
+              orDataset[norm].weeks[wk] = 0.0;
+            }
+          });
+        });
+      }
+      return validCount;
+    }
+
     // --- INITIALIZE DATASETS ---
     function initDatasets() {
       // 1. Setup OR Dataset
@@ -1156,7 +1232,8 @@
           name: fl.name,
           group: fl.group,
           area: fl.area,
-          weeks: {}
+          weeks: {},
+          details: {}
         };
         orTargets[fl.name] = orGlobalTarget;
         for (let w = 1; w <= 45; w++) {
@@ -1236,6 +1313,7 @@
         oeeMaxWeek = detectedMaxWeek;
         if (!isInitial && currentMode === 'OEE') {
           renderMatrix();
+          populateMachineCheckboxes();
           updateLastSyncedTimestamp();
         }
       }
@@ -1256,7 +1334,7 @@
         orBtn.className = "flex items-center space-x-1.5 px-3 py-1 rounded-md bg-cyan-700 text-white shadow font-semibold transition";
         oeeBtn.className = "flex items-center space-x-1.5 px-3 py-1 rounded-md text-slate-400 hover:text-white transition";
         metricDisplay.textContent = "OR (Operational Reliability)";
-        sourceDisplay.textContent = "Consolidated_OR (Sheets)";
+        sourceDisplay.textContent = "OR Production by shift (Sheets)";
         syncBtnText.textContent = "Sync Sheet";
         globalTgtCont.classList.remove('hidden');
         globalInput.value = orGlobalTarget;
@@ -1296,15 +1374,61 @@
       }
     }
 
-    // OR: Sync Google Sheets (JSONP)
-    function syncGoogleSheets(isManual = false) {
+    // OR: Sync Google Sheets ("OR Production by shift") ผ่าน CSV Export
+    async function syncGoogleSheets(isManual = false) {
       const syncBtn = document.getElementById('syncBtn');
-      const originalHTML = syncBtn.innerHTML;
-      if (isManual) {
+      const originalHTML = syncBtn ? syncBtn.innerHTML : '';
+      if (syncBtn && isManual) {
         syncBtn.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>Syncing...</span>`;
         if (window.lucide) lucide.createIcons();
       }
 
+      const csvUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=${GID}&_cb=${Date.now()}`;
+
+      try {
+        const resp = await fetch(csvUrl, { cache: "no-store" });
+        if (!resp.ok) throw new Error("Network response was not ok");
+        const csvText = await resp.text();
+        const lines = csvText.split(/\r?\n/);
+        const shiftRows = [];
+
+        lines.forEach((lineStr, idx) => {
+          if (!lineStr.trim() || idx === 0) return;
+          const cols = lineStr.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.trim().replace(/^"|"$/g, ''));
+          if (cols.length >= 7) {
+            shiftRows.push({
+              week: cols[1],
+              plant: cols[2],
+              line: cols[3],
+              plan: cols[5],
+              actual: cols[6]
+            });
+          }
+        });
+
+        Object.keys(orDataset).forEach(k => {
+          orDataset[k].weeks = {};
+          orDataset[k].details = {};
+        });
+
+        const count = calculateWeeklyOrFromShifts(shiftRows);
+        if (count > 0 && currentMode === 'OR') {
+          renderMatrix();
+          populateMachineCheckboxes();
+          updateLastSyncedTimestamp();
+        }
+      } catch (err) {
+        console.warn("CSV Direct Sync failed, falling back to GViz JSONP...", err);
+        syncGoogleSheetsFallback();
+      } finally {
+        if (syncBtn && isManual) {
+          syncBtn.innerHTML = originalHTML;
+          if (window.lucide) lucide.createIcons();
+        }
+      }
+    }
+
+    function syncGoogleSheetsFallback() {
       const scriptId = 'gviz_jsonp_script';
       const oldScript = document.getElementById(scriptId);
       if (oldScript) oldScript.remove();
@@ -1313,88 +1437,82 @@
       script.id = scriptId;
       const cacheBust = Date.now();
       script.src = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=responseHandler:handleGvizResponse;reqId:${cacheBust}&gid=${GID}&_cb=${cacheBust}`;
-      
-      script.onerror = () => {
-        console.warn("Live Google Sheet Sync error. Using existing cached data.");
-        if (isManual) {
-          syncBtn.innerHTML = originalHTML;
-          if (window.lucide) lucide.createIcons();
-        }
-      };
-
       document.body.appendChild(script);
-
-      if (isManual) {
-        setTimeout(() => {
-          syncBtn.innerHTML = originalHTML;
-          if (window.lucide) lucide.createIcons();
-        }, 1200);
-      }
     }
 
     window.handleGvizResponse = function(response) {
       if (!response || !response.table || !response.table.rows) return;
       const rows = response.table.rows;
-      let detectedMaxWk = orMaxWeek;
-      let count = 0;
+      const shiftRows = [];
 
       rows.forEach(r => {
         const c = r.c;
         if (!c) return;
+        const getVal = (cell) => (!cell ? null : (cell.v !== undefined && cell.v !== null ? cell.v : cell.f));
+        const wk = getVal(c[1]);
+        const plant = getVal(c[2]);
+        const line = getVal(c[3]);
+        const plan = getVal(c[5]);
+        const actual = getVal(c[6]);
 
-        let wk = c[1] ? parseInt(c[1].v !== undefined ? c[1].v : c[1].f, 10) : null;
-        let line = c[2] ? String(c[2].v !== undefined ? c[2].v : c[2].f).trim() : null;
-        let grp = c[3] ? String(c[3].v !== undefined ? c[3].v : c[3].f).trim() : "";
-        let orRaw = c[8] ? (c[8].v !== undefined ? c[8].v : c[8].f) : null;
-
-        if (!wk || !line) {
-          wk = c[0] ? parseInt(c[0].v !== undefined ? c[0].v : c[0].f, 10) : null;
-          line = c[1] ? String(c[1].v !== undefined ? c[1].v : c[1].f).trim() : null;
-          grp = c[2] ? String(c[2].v !== undefined ? c[2].v : c[2].f).trim() : "";
-          orRaw = c[7] ? (c[7].v !== undefined ? c[7].v : c[7].f) : null;
-        }
-
-        if (wk && line && wk > 0) {
-          if (wk > detectedMaxWk) detectedMaxWk = wk;
-          const norm = normalizeLineName(line);
-
-          if (!orDataset[norm]) {
-            const area = (grp.includes('DS') || grp.includes('LS')) ? 'LSDS' : 'KN';
-            orDataset[norm] = { name: norm, group: grp, area: area, weeks: {} };
-            orSelectedMachines.add(norm);
-            orTargets[norm] = orGlobalTarget;
-          }
-
-          let orVal = 0.0;
-          if (orRaw !== null && orRaw !== "" && orRaw !== "-") {
-            const parsed = parseFloat(String(orRaw).replace("%", ""));
-            if (!isNaN(parsed)) orVal = Number(parsed.toFixed(1));
-          }
-          orDataset[norm].weeks[wk] = orVal;
-          count++;
+        if (wk !== null && line !== null && plan !== null) {
+          shiftRows.push({
+            week: wk,
+            plant: String(plant || ''),
+            line: String(line),
+            plan: plan,
+            actual: actual !== null ? actual : 0
+          });
         }
       });
 
-      if (count > 0) {
-        orMaxWeek = detectedMaxWk;
-        if (currentMode === 'OR') {
-          renderMatrix();
-          populateMachineCheckboxes();
-          updateLastSyncedTimestamp();
-        }
+      Object.keys(orDataset).forEach(k => {
+        orDataset[k].weeks = {};
+        orDataset[k].details = {};
+      });
+
+      const count = calculateWeeklyOrFromShifts(shiftRows);
+      if (count > 0 && currentMode === 'OR') {
+        renderMatrix();
+        populateMachineCheckboxes();
+        updateLastSyncedTimestamp();
       }
     };
 
-    // OEE: Sync Google Drive
-    async function syncGoogleDrive(isManual = false) {
+    // OEE: Sync Google Drive via Apps Script Web App JSONP (กับ Proxy Fallback)
+    function syncGoogleDrive(isManual = false) {
       const syncBtn = document.getElementById('syncBtn');
-      let originalBtnHtml = "";
+      const originalBtnHtml = syncBtn ? syncBtn.innerHTML : '';
       if (syncBtn && isManual) {
-        originalBtnHtml = syncBtn.innerHTML;
         syncBtn.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>Syncing...</span>`;
         if (window.lucide) lucide.createIcons();
       }
 
+      const scriptId = 'oee_jsonp_script';
+      const oldScript = document.getElementById(scriptId);
+      if (oldScript) oldScript.remove();
+
+      window.handleOeeJsonp = function(data) {
+        if (data && data.csv) {
+          parseOeeCSV(data.csv, false);
+        }
+        if (syncBtn && isManual) {
+          syncBtn.innerHTML = originalBtnHtml;
+          if (window.lucide) lucide.createIcons();
+        }
+      };
+
+      const script = document.createElement('script');
+      script.id = scriptId;
+      script.src = `${OEE_WEB_APP_URL}?callback=handleOeeJsonp&_cb=${Date.now()}`;
+      script.onerror = () => {
+        console.warn("OEE Web App JSONP failed, trying proxy fallback...");
+        syncGoogleDriveProxyFallback(isManual, syncBtn, originalBtnHtml);
+      };
+      document.body.appendChild(script);
+    }
+
+    async function syncGoogleDriveProxyFallback(isManual, syncBtn, originalBtnHtml) {
       const driveExportUrl = `https://drive.google.com/uc?export=download&id=${GOOGLE_DRIVE_FILE_ID}`;
       const proxyEndpoints = [
         `https://api.allorigins.win/raw?url=${encodeURIComponent(driveExportUrl)}`,
@@ -1546,13 +1664,18 @@
           const val = item.weeks[w] !== undefined ? item.weeks[w] : 0.0;
           let cellClass = 'cell-empty';
           let displayVal = '-';
+          let tooltipAttr = '';
 
           if (val > 0) {
             displayVal = `${val.toFixed(1)}%`;
             cellClass = val >= target ? 'cell-pass' : 'cell-fail';
+            if (currentMode === 'OR' && item.details && item.details[w]) {
+              const d = item.details[w];
+              tooltipAttr = `title="${name} (WK${w}) | Plan: ${d.plan.toLocaleString()} | Actual: ${d.act.toLocaleString()} | Abs Diff: ${d.absDiff.toLocaleString()} | OR: ${val.toFixed(2)}%"`;
+            }
           }
 
-          tbodyHtml += `<td class="text-center px-1 py-1.5 border-r border-b border-slate-800/80 text-[11px] font-bold ${cellClass}">
+          tbodyHtml += `<td ${tooltipAttr} class="text-center px-1 py-1.5 border-r border-b border-slate-800/80 text-[11px] font-bold ${cellClass}">
             ${displayVal}
           </td>`;
         }
@@ -1733,55 +1856,26 @@
       if (currentMode === 'OEE' && (rawText.includes(',') || rawText.includes('Week No.'))) {
         parseOeeCSV(rawText, false);
       } else {
-        // Universal tab / comma parser
-        const lines = rawText.split('\n');
-        let count = 0;
-        const dataset = getActiveDataset();
-        const targets = getActiveTargets();
-        const selectedSet = getActiveSelectedSet();
-        let maxWk = currentMode === 'OR' ? orMaxWeek : oeeMaxWeek;
+        const lines = rawText.split(/\r?\n/);
+        const shiftRows = [];
 
-        lines.forEach(str => {
+        lines.forEach((str, idx) => {
+          if (idx === 0 && str.toLowerCase().includes('plan')) return;
           let cols = str.split('\t').map(c => c.trim());
-          if (cols.length < 3) cols = str.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
-          if (cols.length < 3) return;
-
-          let wk = parseInt(cols[1], 10);
-          let lineName = cols[2];
-          let grp = cols[3] || "";
-          let valStr = cols[8];
-
-          if (isNaN(wk) || !lineName) {
-            wk = parseInt(cols[0], 10);
-            lineName = cols[1];
-            grp = cols[2] || "";
-            valStr = cols[7] || cols[cols.length - 1];
-          }
-
-          if (wk && lineName && wk > 0) {
-            if (wk > maxWk) maxWk = wk;
-            const norm = normalizeLineName(lineName);
-
-            if (!dataset[norm]) {
-              const area = (grp.includes('DS') || grp.includes('LS')) ? 'LSDS' : 'KN';
-              dataset[norm] = { name: norm, group: grp, area: area, weeks: {} };
-              selectedSet.add(norm);
-              targets[norm] = currentMode === 'OR' ? orGlobalTarget : 68.0;
-            }
-
-            let numVal = 0.0;
-            if (valStr && valStr !== "-" && valStr !== "0") {
-              const parsed = parseFloat(valStr.replace("%", ""));
-              if (!isNaN(parsed)) numVal = Number(parsed.toFixed(1));
-            }
-            dataset[norm].weeks[wk] = numVal;
-            count++;
+          if (cols.length < 6) cols = str.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+          if (cols.length >= 7) {
+            shiftRows.push({
+              week: cols[1],
+              plant: cols[2],
+              line: cols[3],
+              plan: cols[5],
+              actual: cols[6]
+            });
           }
         });
 
+        const count = calculateWeeklyOrFromShifts(shiftRows);
         if (count > 0) {
-          if (currentMode === 'OR') orMaxWeek = maxWk;
-          else oeeMaxWeek = maxWk;
           populateMachineCheckboxes();
           renderMatrix();
           updateLastSyncedTimestamp();
