@@ -1161,9 +1161,8 @@
         const wk = parseInt(item.week, 10);
         const rawLine = item.line;
         const plant = (item.plant || '').toUpperCase().trim();
-        const plan = parseFloat(item.plan);
-        const actual = parseFloat(item.actual);
-
+        const plan = parseFloat(String(item.plan).replace(/,/g, ''));
+        const actual = parseFloat(String(item.actual).replace(/,/g, ''));
         if (isNaN(wk) || wk <= 0 || !rawLine) return;
         const planVal = isNaN(plan) ? 0 : plan;
         const actVal = isNaN(actual) ? 0 : actual;
