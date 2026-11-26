@@ -3,11 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Factory Operations Matrix (OR & OEE Weekly Scorecard)</title>
+  <title>Factory Operations Matrix (OR, OEE & ENERGY Weekly Scorecard)</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- SheetJS (XLSX) for Excel Export -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
     
@@ -55,6 +57,11 @@
       color: #94a3b8; /* Muted Slate Dash */
       font-weight: 500;
     }
+    .cell-volume {
+      background-color: #0f1e36; /* Deep Slate Navy for Energy Volume KPIs */
+      color: #e2e8f0;
+      font-weight: 700;
+    }
 
     /* Scrollbar Styling */
     ::-webkit-scrollbar {
@@ -72,37 +79,38 @@
     ::-webkit-scrollbar-thumb:hover {
       background: #0284c7;
     }
-/* Row Hover Highlighting */
-#matrixTbody tr {
-  transition: transform 0.08s ease;
-}
 
-/* ไฮไลท์คอลัมน์ชื่อเครื่องจักรด้านซ้ายสุด */
-#matrixTbody tr:hover td.sticky-col {
-  background-color: #164e63 !important; /* สีฟ้าอมเขียวเข้ม (Cyan-900) */
-  color: #22d3ee !important; /* ตัวอักษรสว่างขึ้น */
-  box-shadow: inset 3px 0 0 #06b6d4, inset 0 1px 0 #22d3ee, inset 0 -1px 0 #22d3ee;
-}
+    /* Row Hover Highlighting */
+    #matrixTbody tr {
+      transition: transform 0.08s ease;
+    }
 
-/* ไฮไลท์ทุกช่องในบรรทัดนั้น (ให้สว่างขึ้นและมีเส้นขอบบน-ล่างนำสายตา) */
-#matrixTbody tr:hover td:not(.sticky-col) {
-  filter: brightness(1.15);
-  box-shadow: inset 0 1.5px 0 rgba(6, 182, 212, 0.9), inset 0 -1.5px 0 rgba(6, 182, 212, 0.9);
-}
+    /* ไฮไลท์คอลัมน์ชื่อเครื่องจักรด้านซ้ายสุด */
+    #matrixTbody tr:hover td.sticky-col {
+      background-color: #164e63 !important;
+      color: #22d3ee !important;
+      box-shadow: inset 3px 0 0 #06b6d4, inset 0 1px 0 #22d3ee, inset 0 -1px 0 #22d3ee;
+    }
 
-/* เปลี่ยนสีช่องว่าง (สีขาว) ในแถวที่ชี้ให้เป็นสีฟ้าอ่อน จะได้เห็นเส้นนำสายตายาวตลอดแนว */
-#matrixTbody tr:hover td.cell-empty {
-  background-color: #cffafe !important; /* สีฟ้าอ่อน (Cyan-100) */
-  color: #0e7490 !important;
-}
+    /* ไฮไลท์ทุกช่องในบรรทัดนั้น */
+    #matrixTbody tr:hover td:not(.sticky-col) {
+      filter: brightness(1.15);
+      box-shadow: inset 0 1.5px 0 rgba(6, 182, 212, 0.9), inset 0 -1.5px 0 rgba(6, 182, 212, 0.9);
+    }
 
-/* (ตัวเลือกเสริม) เน้นช่องที่เมาส์กำลังชี้อยู่ให้เด่นขึ้นอีกนิด */
-#matrixTbody td:not(.sticky-col):hover {
-  outline: 2px solid #ffffff;
-  outline-offset: -2px;
-  z-index: 10;
-  position: relative;
-}
+    /* เปลี่ยนสีช่องว่าง (สีขาว) ในแถวที่ชี้ให้เป็นสีฟ้าอ่อน */
+    #matrixTbody tr:hover td.cell-empty {
+      background-color: #cffafe !important;
+      color: #0e7490 !important;
+    }
+
+    /* เน้นช่องที่เมาส์กำลังชี้อยู่ */
+    #matrixTbody td:not(.sticky-col):hover {
+      outline: 2px solid #ffffff;
+      outline-offset: -2px;
+      z-index: 10;
+      position: relative;
+    }
   </style>
 </head>
 <body class="h-full flex flex-col bg-[#050b14] text-slate-100 overflow-hidden select-none">
@@ -116,7 +124,7 @@
         <span class="font-tech font-bold text-sm tracking-wider text-cyan-300">DIGITAL MATRIX MONITOR</span>
       </div>
 
-      <!-- Mode Switcher (OR vs OEE) -->
+      <!-- Mode Switcher (OR vs OEE vs ENERGY) -->
       <div class="flex items-center bg-slate-950 border border-cyan-700/60 rounded-lg p-0.5 text-xs font-semibold shadow-inner">
         <button id="modeOrBtn" onclick="switchMode('OR')" class="flex items-center space-x-1.5 px-3 py-1 rounded-md bg-cyan-700 text-white shadow transition">
           <i data-lucide="activity" class="w-3.5 h-3.5"></i>
@@ -126,17 +134,21 @@
           <i data-lucide="gauge" class="w-3.5 h-3.5"></i>
           <span>OEE</span>
         </button>
+        <button id="modeEnergyBtn" onclick="switchMode('ENERGY')" class="flex items-center space-x-1.5 px-3 py-1 rounded-md text-slate-400 hover:text-white transition">
+          <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+          <span>ENERGY</span>
+        </button>
       </div>
 
       <!-- Factory Area Selector Filter -->
-      <div class="flex items-center bg-slate-900/90 border border-slate-800 rounded-lg p-0.5 text-xs font-medium">
+      <div id="areaFilterContainer" class="flex items-center bg-slate-900/90 border border-slate-800 rounded-lg p-0.5 text-xs font-medium">
         <button onclick="setAreaFilter('ALL')" id="filterAllBtn" class="px-2.5 py-1 rounded-md bg-cyan-700 text-white font-semibold transition">ALL</button>
         <button onclick="setAreaFilter('KN')" id="filterKnBtn" class="px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition">KN</button>
         <button onclick="setAreaFilter('LSDS')" id="filterLsdsBtn" class="px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition">LSDS</button>
       </div>
 
       <!-- Machine Selector Dropdown -->
-      <div class="relative">
+      <div id="machineSelectorContainer" class="relative">
         <button id="machineFilterBtn" onclick="toggleMachineDropdown(event)" class="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700/80 hover:border-cyan-500 text-slate-300 text-xs flex items-center space-x-1.5 transition">
           <i data-lucide="layers" class="w-3.5 h-3.5 text-cyan-400"></i>
           <span>Select Lines (<span id="selectedCountDisplay">All</span>)</span>
@@ -162,7 +174,7 @@
       </div>
 
       <!-- Quick Search Bar -->
-      <div class="relative w-36 sm:w-48">
+      <div id="searchBarContainer" class="relative w-36 sm:w-48">
         <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2"></i>
         <input type="text" id="searchInput" placeholder="Search line..." class="w-full text-xs pl-8 pr-2.5 py-1 rounded-lg bg-slate-950/90 border border-slate-800 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500">
       </div>
@@ -170,7 +182,6 @@
 
     <!-- Right Controls: Target Adjuster, Auto-Refresh, Sync, Stats -->
     <div class="flex items-center space-x-2.5 text-xs">
-      
       <!-- Quick Global Target Setting (Visible in OR mode) -->
       <div id="globalTargetContainer" class="flex items-center space-x-1.5 bg-slate-900/90 border border-slate-800 px-2.5 py-1 rounded-lg">
         <span class="text-slate-400 text-[11px]">Global:</span>
@@ -209,6 +220,12 @@
         <i data-lucide="clipboard-paste" class="w-3.5 h-3.5"></i>
       </button>
 
+      <!-- Export to Excel Button -->
+      <button onclick="exportCurrentTableToExcel()" class="px-2.5 py-1 rounded-lg bg-emerald-800/80 hover:bg-emerald-700 border border-emerald-500/70 text-emerald-100 font-semibold flex items-center space-x-1.5 transition shadow-[0_0_10px_rgba(16,185,129,0.25)]" title="Export Current Table to Excel (.xlsx)">
+        <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i>
+        <span class="hidden sm:inline">Excel</span>
+      </button>
+
       <!-- Week Range Badge -->
       <div class="bg-cyan-950/80 border border-cyan-800 px-2.5 py-1 rounded-lg text-[11px] font-num text-cyan-300 font-bold">
         <span id="weekSpanBadge">WK1 - WK45</span>
@@ -221,15 +238,15 @@
     <div class="flex items-center space-x-4">
       <span class="text-slate-300">Metric: <b id="currentMetricDisplay" class="text-amber-400 font-tech">OR (Operational Reliability)</b></span>
       <span class="text-slate-500">|</span>
-      <span class="text-slate-300">Lines Displayed: <b id="displayedCount" class="text-cyan-400 font-num">0</b></span>
+      <span class="text-slate-300"><span id="countLabelText">Lines Displayed:</span> <b id="displayedCount" class="text-cyan-400 font-num">0</b></span>
       <span class="hidden sm:inline text-slate-500">|</span>
       <span class="hidden sm:inline text-slate-400">Data Source: <b id="dataSourceDisplay" class="text-slate-200">OR Production by shift (Sheets)</b></span>
       <span class="hidden md:inline text-slate-500">|</span>
       <span class="hidden md:inline text-slate-400">Last Synced: <b id="lastSyncedTime" class="text-cyan-400 font-num">Initial Baseline</b></span>
     </div>
 
-    <!-- Visual Legend -->
-    <div class="flex items-center space-x-4 font-semibold text-[11px]">
+    <!-- Visual Legend (OR / OEE) -->
+    <div id="defaultLegend" class="flex items-center space-x-4 font-semibold text-[11px]">
       <div class="flex items-center space-x-1.5">
         <span class="w-3 h-3 rounded bg-[#10b981] inline-block shadow-[0_0_6px_#10b981]"></span>
         <span class="text-emerald-400">≥ Target (Pass)</span>
@@ -241,6 +258,26 @@
       <div class="flex items-center space-x-1.5">
         <span class="w-3 h-3 rounded bg-white border border-slate-300 inline-block"></span>
         <span class="text-slate-300">White / "-" (No Plan / N/A)</span>
+      </div>
+    </div>
+
+    <!-- Visual Legend (ENERGY Mode) -->
+    <div id="energyLegend" class="hidden flex items-center space-x-4 font-semibold text-[11px]">
+      <div class="flex items-center space-x-1.5">
+        <span class="w-3 h-3 rounded bg-[#10b981] inline-block shadow-[0_0_6px_#10b981]"></span>
+        <span class="text-emerald-400">≤ Target (Pass)</span>
+      </div>
+      <div class="flex items-center space-x-1.5">
+        <span class="w-3 h-3 rounded bg-[#f43f5e] inline-block shadow-[0_0_6px_#f43f5e]"></span>
+        <span class="text-rose-400">&gt; Target (Exceed)</span>
+      </div>
+      <div class="flex items-center space-x-1.5">
+        <span class="w-3 h-3 rounded bg-[#0f1e36] border border-slate-600 inline-block"></span>
+        <span class="text-slate-300">Weekly Volume</span>
+      </div>
+      <div class="flex items-center space-x-1.5">
+        <span class="w-3 h-3 rounded bg-white border border-slate-300 inline-block"></span>
+        <span class="text-slate-300">"-" (No Data)</span>
       </div>
     </div>
   </div>
@@ -257,7 +294,7 @@
     </div>
   </main>
 
-  <!-- MODAL 1: INDIVIDUAL LINE TARGETS -->
+  <!-- MODAL 1: INDIVIDUAL LINE / ENERGY TARGETS -->
   <div id="targetModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
     <div class="bg-slate-900 border border-cyan-800/80 rounded-xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl">
       <div class="px-5 py-3 border-b border-slate-800 flex items-center justify-between">
@@ -271,7 +308,7 @@
       </div>
 
       <div class="p-5 flex-1 overflow-y-auto space-y-4 text-xs">
-        <p class="text-slate-400">
+        <p id="targetModalDesc" class="text-slate-400">
           ปรับแต่งค่าเป้าหมาย (Target %) แยกเฉพาะเจาะจงแต่ละเครื่องจักรสำหรับโหมด <b id="modalTargetMetricBadge" class="text-cyan-300">OR</b>:
         </p>
         <div id="modalMachineTargetsList" class="space-y-1.5 max-h-72 overflow-y-auto pr-1"></div>
@@ -298,7 +335,7 @@
       </div>
 
       <div class="p-5 flex-1 overflow-y-auto space-y-3 text-xs">
-        <p class="text-slate-400 leading-relaxed">
+        <p id="pasteModalDesc" class="text-slate-400 leading-relaxed">
           คัดลอกตารางจาก Google Sheets หรือ CSV มาวางเพื่ออัปเดตข้อมูลของโหมด <b id="pasteModalMetricBadge" class="text-cyan-300">OR</b>:
         </p>
         <textarea id="pasteTextArea" rows="10" placeholder="DATE&#9;Week&#9;Plant&#9;LINE&#9;SHIFT&#9;PLAN&#9;ACTUAL" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-xs font-mono text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500"></textarea>
@@ -313,7 +350,7 @@
 
   <script>
     // --- STATE MANAGEMENT ---
-    let currentMode = 'OR'; // 'OR' | 'OEE'
+    let currentMode = 'OR'; // 'OR' | 'OEE' | 'ENERGY'
     let currentAreaFilter = 'ALL';
     let searchQuery = '';
     let dropdownSearchQuery = '';
@@ -322,14 +359,57 @@
     let countdownTimerSec = 60;
     let refreshIntervalHandle = null;
 
-    // Config for OR ("OR Production by shift")
+    // Config for OR ("OR Production by shift") — จากต้นฉบับ All Scrorecard4.html
     const SPREADSHEET_ID = "10p7sU2-9dpdeqZqnj3aoW7IOncCwqUrBeql5HrPxyJs";
     const GID = "0";
     let orGlobalTarget = 98.0;
 
-    // Config for OEE
+    // Config for OEE — จากต้นฉบับ All Scrorecard4.html
     const GOOGLE_DRIVE_FILE_ID = "11Uk4OkJUSuxJmYUlbNDtAULyABZsnv26";
     const OEE_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx33Yxk2e9qXTyJZSynKmKW50dH0VCBpoFWoRV6MRDr_T59TtIVGAWFzOx9IeOwZOe4CA/exec";
+
+    // Config for ENERGY ("Utility Energy KPI.xlsx" via gateway.informationhub@gmail.com)
+    const ENERGY_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyKxeZFoi_TftQzYm2d4zEPMT2PUYjRMROEC9iKwgacljiBD1KUx-_vZA36iRlExki50A/exec";
+    let energySyncStatusHtml = "Utility Energy KPI.xlsx (Drive)";
+    let energyTargets = {
+      gjPerTon: 1.025,
+      waterPerTon: 1.425
+    };
+    let energyWeeklyData = {};
+    let energyMaxWeek = 48;
+
+    const ENERGY_KPI_ROWS = [
+      { key: "energyGJ", label: "Total Energy (GJ)", unit: "GJ", type: "volume", decimals: 0 },
+      { key: "waterM3", label: "Total Water (m³)", unit: "m³", type: "volume", decimals: 0 },
+      { key: "productTon", label: "Total Product (Ton)", unit: "Tons", type: "volume", decimals: 1 },
+      { key: "gjPerTon", label: "GJ/Ton", unit: "GJ/Ton", type: "intensity", targetKey: "gjPerTon", decimals: 3 },
+      { key: "waterPerTon", label: "Water/Ton", unit: "m³/Ton", type: "intensity", targetKey: "waterPerTon", decimals: 3 }
+    ];
+
+    const BASELINE_ENERGY_DAILY = [
+      { date: "2026-11-03", water: 444.11, gjTotal: 249.945, ton: 239.440 },
+      { date: "2026-11-04", water: 349.87, gjTotal: 249.969, ton: 252.390 },
+      { date: "2026-11-05", water: 344.96, gjTotal: 242.006, ton: 250.240 },
+      { date: "2026-11-06", water: 474.93, gjTotal: 227.404, ton: 171.660 },
+      { date: "2026-11-07", water: 326.92, gjTotal: 177.643, ton: 111.980 },
+      { date: "2026-11-08", water: 159.80, gjTotal: 91.477, ton: 0 },
+      { date: "2026-11-09", water: 297.67, gjTotal: 202.587, ton: 136.290 },
+      { date: "2026-11-10", water: 297.67, gjTotal: 232.663, ton: 243.220 },
+      { date: "2026-11-11", water: 370.99, gjTotal: 236.122, ton: 263.890 },
+      { date: "2026-11-12", water: 357.20, gjTotal: 252.196, ton: 255.010 },
+      { date: "2026-11-13", water: 384.30, gjTotal: 245.430, ton: 189.330 },
+      { date: "2026-11-14", water: 334.93, gjTotal: 185.826, ton: 77.290 },
+      { date: "2026-11-15", water: 115.74, gjTotal: 69.577, ton: 0 },
+      { date: "2026-11-16", water: 404.49, gjTotal: 203.785296, ton: 106.560 },
+      { date: "2026-11-17", water: 346.20, gjTotal: 238.812086, ton: 184.440 },
+      { date: "2026-11-18", water: 375.95, gjTotal: 237.748934, ton: 203.360 },
+      { date: "2026-11-19", water: 375.58, gjTotal: 232.835693, ton: 197.920 },
+      { date: "2026-11-20", water: 354.19, gjTotal: 230.460499, ton: 156.620 },
+      { date: "2026-11-21", water: 302.96, gjTotal: 215.511667, ton: 129.560 },
+      { date: "2026-11-22", water: 174.97, gjTotal: 79.5302592, ton: 5.940 },
+      { date: "2026-11-23", water: 285.35, gjTotal: 221.642, ton: 109.260 },
+      { date: "2026-11-24", water: 365.10, gjTotal: 233.509, ton: 182.920 }
+    ];
 
     // Common Factory Lines definition
     const FACTORY_LINES = [
@@ -408,7 +488,7 @@
     let oeeMaxWeek = 45;
     let oeeSelectedMachines = new Set();
 
-    // Baseline OR Data
+    // Baseline OR Data (ต้นฉบับ All Scrorecard4.html)
     const baselineOrData = {
       "Benhil 1": { 2: 99.1, 3: 100.0, 4: 98.5, 5: 98.0, 6: 99.9, 7: 95.6, 8: 100.0, 9: 100.0, 10: 98.8, 11: 98.1, 12: 97.7, 13: 99.6, 14: 99.5, 18: 36.1, 19: 99.5, 20: 93.7, 21: 95.9, 22: 99.4, 23: 98.5, 24: 98.9, 25: 84.6, 26: 90.8, 27: 91.1, 28: 95.9, 29: 99.2, 30: 99.5, 31: 99.0, 32: 99.2, 33: 98.4, 34: 99.1, 35: 98.8, 36: 98.5, 37: 99.1, 38: 98.9, 40: 93.17, 41: 99.67 },
       "Benhil 2": { 2: 98.2, 3: 100.0, 4: 98.6, 5: 99.6, 6: 97.7, 7: 100.0, 8: 99.9, 9: 100.0, 10: 99.7, 11: 99.7, 12: 92.7, 13: 99.8, 14: 98.5, 15: 99.3, 17: 100.0, 18: 88.2, 19: 99.7, 20: 88.7, 21: 94.8, 22: 99.9, 23: 97.7, 24: 99.6, 25: 99.9, 26: 99.3, 27: 100.0, 28: 98.4, 29: 99.9, 30: 99.5, 31: 98.7, 32: 98.9, 33: 99.1, 34: 98.2, 35: 98.5, 36: 99.1, 37: 98.7, 38: 99.0, 40: 99.22, 41: 99.49 },
@@ -443,39 +523,8 @@
       "Spice": { 24: 93.0, 25: 93.5, 26: 96.2, 28: 99.4, 29: 92.7, 31: 91.9, 32: 96.7, 33: 95.0, 34: 97.4, 35: 93.9, 36: 96.5 }
     };
 
-    // Baseline OEE CSV Data
+    // Baseline OEE CSV Data (ต้นฉบับ All Scrorecard4.html)
     const EMBEDDED_OEE_CSV = `[Week No.],[Line Name],[OEE Target],[OEE Actual]
-1,Bartelt-1,,
-1,Bartelt-2,,
-1,Bartelt-3,,
-1,Benhil-1,68,0
-1,Benhil-2,67,0
-1,Benhil-3,69,0
-1,Benhil-4,69,0
-1,Benhil-5,62,0
-1,Benhil-6,68,0
-1,Benhil-7,66,0
-1,Corazza-4,,
-1,Corazza-5,,
-1,Cupfiller-3,52,0
-1,Cupfiller-4,0,
-1,Demar-4,0,0
-1,DS Sachet-4,,
-1,DS Sahcet-3,,
-1,ILAPACK,,
-1,INLINE,,
-1,LS Sachet 1,,
-1,LS Sachet 2,,
-1,Mespack-3,0,
-1,Mespack-4,60,0
-1,Mespack-5,,
-1,SERAC,,
-1,Syntegon-1,,
-1,Syntegon-2,,
-1,VFFS,0,
-2,Bartelt-1,,
-2,Bartelt-2,,
-2,Bartelt-3,,
 2,Benhil-1,68,26.3
 2,Benhil-2,67,52.2
 2,Benhil-3,69,56.6
@@ -1149,9 +1198,7 @@
 45,Syntegon-1,75,73.1
 45,Syntegon-2,62,53.3`;
 
-    // --- HELPER: CALCULATE WEEKLY OR FROM SHIFT RECORDS ---
-    // รวมข้อมูลรายกะ (Week, Plant, LINE, PLAN, ACTUAL) เป็นรายสัปดาห์
-    // สูตร: Abs Diff = |Total Actual - Total Plan| และ OR (%) = (1 - (Abs Diff / Total Plan)) * 100
+    // --- HELPER: CALCULATE WEEKLY OR FROM SHIFT RECORDS (ต้นฉบับ All Scrorecard4.html 100%) ---
     function calculateWeeklyOrFromShifts(shiftRows) {
       const agg = {};
       let detectedMaxWk = orMaxWeek;
@@ -1163,6 +1210,7 @@
         const plant = (item.plant || '').toUpperCase().trim();
         const plan = parseFloat(String(item.plan).replace(/,/g, ''));
         const actual = parseFloat(String(item.actual).replace(/,/g, ''));
+
         if (isNaN(wk) || wk <= 0 || !rawLine) return;
         const planVal = isNaN(plan) ? 0 : plan;
         const actVal = isNaN(actual) ? 0 : actual;
@@ -1223,9 +1271,165 @@
       return validCount;
     }
 
+    // --- ENERGY AGGREGATION HELPERS ---
+    function getISOWeekAndYear(dateObj) {
+      const date = new Date(Date.UTC(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate()));
+      const dayNum = date.getUTCDay() || 7;
+      date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+      const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+      const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+      return { week: weekNo, year: date.getUTCFullYear() };
+    }
+
+    function parseEnergyDate(rawStr) {
+      if (!rawStr) return null;
+      const s = String(rawStr).trim().replace(/^["']|["']$/g, '').split(/\s+/)[0];
+      if (!s) return null;
+
+      let m = s.match(/^(\d{4})[-\/\.](\d{1,2})[-\/\.](\d{1,2})$/);
+      if (m) return new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+
+      m = s.match(/^(\d{1,2})[-\/\.](\d{1,2})[-\/\.](\d{2,4})$/);
+      if (m) {
+        let yr = parseInt(m[3], 10);
+        if (yr < 100) yr += 2000;
+        if (yr > 2400) yr -= 543;
+        return new Date(yr, parseInt(m[2], 10) - 1, parseInt(m[1], 10));
+      }
+
+      const months = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+      m = s.match(/^(\d{1,2})[-\/\s]([A-Za-z]{3,})[-\/\s](\d{2,4})$/);
+      if (m) {
+        const monKey = m[2].slice(0, 3).toLowerCase();
+        if (months[monKey] !== undefined) {
+          let yr = parseInt(m[3], 10);
+          if (yr < 100) yr += 2000;
+          if (yr > 2400) yr -= 543;
+          return new Date(yr, months[monKey], parseInt(m[1], 10));
+        }
+      }
+
+      const d = new Date(s);
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    function cleanNumVal(v) {
+      if (v === undefined || v === null) return 0;
+      const str = String(v).replace(/,/g, '').trim();
+      if (!str || str === '-' || str === '#DIV/0!' || str === '#VALUE!' || str === '#REF!') return 0;
+      const n = parseFloat(str);
+      return isNaN(n) ? 0 : n;
+    }
+
+    function aggregateEnergyDailyRows(dailyList) {
+      if (!dailyList || dailyList.length === 0) return 0;
+      const grouped = {};
+      let maxFoundWk = 1;
+
+      dailyList.forEach(item => {
+        const dObj = parseEnergyDate(item.date);
+        if (!dObj) return;
+        const { week } = getISOWeekAndYear(dObj);
+        if (!week || week < 1 || week > 53) return;
+
+        if (!grouped[week]) {
+          grouped[week] = { energyGJ: 0, waterM3: 0, productTon: 0, daysCount: 0 };
+        }
+        grouped[week].energyGJ += item.gjTotal || 0;
+        grouped[week].waterM3 += item.water || 0;
+        grouped[week].productTon += item.ton || 0;
+        grouped[week].daysCount += 1;
+        if (week > maxFoundWk) maxFoundWk = week;
+      });
+
+      const validWeeks = Object.keys(grouped).map(Number);
+      if (validWeeks.length === 0) return 0;
+
+      const result = {};
+      validWeeks.forEach(wk => {
+        const g = grouped[wk];
+        result[wk] = {
+          energyGJ: g.energyGJ,
+          waterM3: g.waterM3,
+          productTon: g.productTon,
+          gjPerTon: g.productTon > 0 ? g.energyGJ / g.productTon : null,
+          waterPerTon: g.productTon > 0 ? g.waterM3 / g.productTon : null,
+          daysCount: g.daysCount
+        };
+      });
+
+      energyWeeklyData = result;
+      energyMaxWeek = Math.max(maxFoundWk, 48);
+      return validWeeks.length;
+    }
+
+    function parseEnergyTableRows(rows) {
+      if (!rows || rows.length < 2) return 0;
+      let headerIdx = -1;
+      let colMap = { date: 0, water: -1, gjTotal: -1, ton: -1, tonKn: -1, tonLsds: -1 };
+
+      for (let i = 0; i < Math.min(15, rows.length); i++) {
+        const r = rows[i].map(c => String(c || '').trim().toLowerCase());
+        const hasDate = r.some(c => c === 'date' || c.includes('วันที่'));
+        const hasGj = r.some(c => c.includes('gj total') || c === 'gj' || c.includes('total gj'));
+        const hasWater = r.some(c => c === 'water' || c.includes('น้ำ'));
+        if (hasDate && (hasGj || hasWater)) {
+          headerIdx = i;
+          r.forEach((cell, idx) => {
+            if (cell === 'date' || cell.includes('วันที่')) colMap.date = idx;
+            else if (cell === 'water' || cell.includes('water (m')) colMap.water = idx;
+            else if (cell === 'gj total' || cell === 'total gj') colMap.gjTotal = idx;
+            else if (cell === 'ton' || cell === 'total ton') colMap.ton = idx;
+            else if (cell.includes('ton kn')) colMap.tonKn = idx;
+            else if (cell.includes('ton lsds')) colMap.tonLsds = idx;
+          });
+          break;
+        }
+      }
+
+      if (headerIdx === -1) {
+        headerIdx = 0;
+        colMap = { date: 0, water: 4, gjTotal: 10, ton: 11, tonKn: 5, tonLsds: 6 };
+      }
+
+      const dailyRecords = [];
+      for (let i = headerIdx + 1; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r || r.length === 0) continue;
+        const rawDate = r[colMap.date];
+        if (!rawDate) continue;
+
+        const dStr = String(rawDate).trim().toLowerCase();
+        if (dStr.includes('total') || dStr.includes('sum') || dStr.includes('avg') || dStr === 'date') continue;
+
+        const waterVal = colMap.water >= 0 ? cleanNumVal(r[colMap.water]) : 0;
+        const gjVal = colMap.gjTotal >= 0 ? cleanNumVal(r[colMap.gjTotal]) : 0;
+        let tonVal = colMap.ton >= 0 ? cleanNumVal(r[colMap.ton]) : 0;
+        if (tonVal === 0 && (colMap.tonKn >= 0 || colMap.tonLsds >= 0)) {
+          const kn = colMap.tonKn >= 0 ? cleanNumVal(r[colMap.tonKn]) : 0;
+          const lsds = colMap.tonLsds >= 0 ? cleanNumVal(r[colMap.tonLsds]) : 0;
+          tonVal = kn + lsds;
+        }
+
+        if (waterVal > 0 || gjVal > 0 || tonVal > 0) {
+          dailyRecords.push({
+            date: rawDate,
+            water: waterVal,
+            gjTotal: gjVal,
+            ton: tonVal
+          });
+        }
+      }
+
+      if (dailyRecords.length > 0) {
+        return aggregateEnergyDailyRows(dailyRecords);
+      }
+      return 0;
+    }
+
     // --- INITIALIZE DATASETS ---
     function initDatasets() {
-      // 1. Setup OR Dataset
+      // 1. Setup OR Dataset (ต้นฉบับ All Scrorecard4.html)
       FACTORY_LINES.forEach(fl => {
         orDataset[fl.name] = {
           name: fl.name,
@@ -1250,7 +1454,7 @@
       });
       orSelectedMachines = new Set(FACTORY_LINES.map(l => l.name));
 
-      // 2. Setup OEE Dataset
+      // 2. Setup OEE Dataset (ต้นฉบับ All Scrorecard4.html)
       FACTORY_LINES.forEach(fl => {
         oeeDataset[fl.name] = {
           name: fl.name,
@@ -1265,6 +1469,20 @@
       });
       oeeSelectedMachines = new Set(FACTORY_LINES.map(l => l.name));
       parseOeeCSV(EMBEDDED_OEE_CSV, true);
+
+      // 3. Setup ENERGY Dataset
+      try {
+        const savedEnergy = localStorage.getItem('factory_energy_matrix_v1');
+        if (savedEnergy) {
+          const p = JSON.parse(savedEnergy);
+          if (p.energyWeeklyData && Object.keys(p.energyWeeklyData).length > 0) energyWeeklyData = p.energyWeeklyData;
+          if (p.energyTargets) energyTargets = { ...energyTargets, ...p.energyTargets };
+          if (p.energyMaxWeek) energyMaxWeek = p.energyMaxWeek;
+        }
+      } catch (e) {}
+      if (Object.keys(energyWeeklyData).length === 0) {
+        aggregateEnergyDailyRows(BASELINE_ENERGY_DAILY);
+      }
     }
 
     function parseOeeCSV(csvContent, isInitial = false) {
@@ -1318,35 +1536,69 @@
       }
     }
 
-    // --- SWITCH MODE (OR <-> OEE) ---
+    // --- SWITCH MODE (OR <-> OEE <-> ENERGY) ---
     function switchMode(mode) {
       currentMode = mode;
       const orBtn = document.getElementById('modeOrBtn');
       const oeeBtn = document.getElementById('modeOeeBtn');
+      const energyBtn = document.getElementById('modeEnergyBtn');
       const metricDisplay = document.getElementById('currentMetricDisplay');
+      const countLabel = document.getElementById('countLabelText');
       const sourceDisplay = document.getElementById('dataSourceDisplay');
       const syncBtnText = document.getElementById('syncBtnText');
       const globalTgtCont = document.getElementById('globalTargetContainer');
       const globalInput = document.getElementById('globalTargetInput');
+      const areaFilterBox = document.getElementById('areaFilterContainer');
+      const machineSelectorBox = document.getElementById('machineSelectorContainer');
+      const searchBarBox = document.getElementById('searchBarContainer');
+      const defaultLegend = document.getElementById('defaultLegend');
+      const energyLegend = document.getElementById('energyLegend');
+
+      [orBtn, oeeBtn, energyBtn].forEach(b => {
+        b.className = "flex items-center space-x-1.5 px-3 py-1 rounded-md text-slate-400 hover:text-white transition";
+      });
 
       if (mode === 'OR') {
         orBtn.className = "flex items-center space-x-1.5 px-3 py-1 rounded-md bg-cyan-700 text-white shadow font-semibold transition";
-        oeeBtn.className = "flex items-center space-x-1.5 px-3 py-1 rounded-md text-slate-400 hover:text-white transition";
         metricDisplay.textContent = "OR (Operational Reliability)";
+        countLabel.textContent = "Lines Displayed:";
         sourceDisplay.textContent = "OR Production by shift (Sheets)";
         syncBtnText.textContent = "Sync Sheet";
         globalTgtCont.classList.remove('hidden');
         globalInput.value = orGlobalTarget;
-      } else {
+        areaFilterBox.classList.remove('hidden');
+        machineSelectorBox.classList.remove('hidden');
+        searchBarBox.classList.remove('hidden');
+        defaultLegend.classList.remove('hidden');
+        energyLegend.classList.add('hidden');
+        populateMachineCheckboxes();
+      } else if (mode === 'OEE') {
         oeeBtn.className = "flex items-center space-x-1.5 px-3 py-1 rounded-md bg-cyan-700 text-white shadow font-semibold transition";
-        orBtn.className = "flex items-center space-x-1.5 px-3 py-1 rounded-md text-slate-400 hover:text-white transition";
         metricDisplay.textContent = "OEE (Overall Equipment Effectiveness)";
+        countLabel.textContent = "Lines Displayed:";
         sourceDisplay.textContent = "DFOS_OEE_Export_Weekly.CSV";
         syncBtnText.textContent = "Drive Sync";
         globalTgtCont.classList.add('hidden');
+        areaFilterBox.classList.remove('hidden');
+        machineSelectorBox.classList.remove('hidden');
+        searchBarBox.classList.remove('hidden');
+        defaultLegend.classList.remove('hidden');
+        energyLegend.classList.add('hidden');
+        populateMachineCheckboxes();
+      } else if (mode === 'ENERGY') {
+        energyBtn.className = "flex items-center space-x-1.5 px-3 py-1 rounded-md bg-cyan-700 text-white shadow font-semibold transition";
+        metricDisplay.textContent = "ENERGY & WATER INTENSITY (Weekly KPI)";
+        countLabel.textContent = "KPIs Displayed:";
+        sourceDisplay.innerHTML = energySyncStatusHtml;
+        syncBtnText.textContent = "Sync Energy";
+        globalTgtCont.classList.add('hidden');
+        areaFilterBox.classList.add('hidden');
+        machineSelectorBox.classList.add('hidden');
+        searchBarBox.classList.add('hidden');
+        defaultLegend.classList.add('hidden');
+        energyLegend.classList.remove('hidden');
       }
 
-      populateMachineCheckboxes();
       renderMatrix();
       scrollToLatestWeek();
     }
@@ -1361,6 +1613,7 @@
       return currentMode === 'OR' ? orSelectedMachines : oeeSelectedMachines;
     }
     function getActiveMaxWeek() {
+      if (currentMode === 'ENERGY') return energyMaxWeek;
       return currentMode === 'OR' ? orMaxWeek : oeeMaxWeek;
     }
 
@@ -1368,12 +1621,14 @@
     function triggerSync(isManual = false) {
       if (currentMode === 'OR') {
         syncGoogleSheets(isManual);
-      } else {
+      } else if (currentMode === 'OEE') {
         syncGoogleDrive(isManual);
+      } else if (currentMode === 'ENERGY') {
+        syncEnergyData(isManual);
       }
     }
 
-    // OR: Sync Google Sheets ("OR Production by shift") ผ่าน CSV Export
+    // OR: Sync Google Sheets ("OR Production by shift") — ต้นฉบับ All Scrorecard4.html 100%
     async function syncGoogleSheets(isManual = false) {
       const syncBtn = document.getElementById('syncBtn');
       const originalHTML = syncBtn ? syncBtn.innerHTML : '';
@@ -1478,7 +1733,7 @@
       }
     };
 
-    // OEE: Sync Google Drive via Apps Script Web App JSONP (กับ Proxy Fallback)
+    // OEE: Sync Google Drive via Apps Script Web App JSONP — ต้นฉบับ All Scrorecard4.html 100%
     function syncGoogleDrive(isManual = false) {
       const syncBtn = document.getElementById('syncBtn');
       const originalBtnHtml = syncBtn ? syncBtn.innerHTML : '';
@@ -1543,6 +1798,92 @@
       }
     }
 
+    // ENERGY: Sync from gateway.informationhub@gmail.com Apps Script Web App
+    function syncEnergyData(isManual = false) {
+      const syncBtn = document.getElementById('syncBtn');
+      const originalBtnHtml = syncBtn ? syncBtn.innerHTML : '';
+      if (syncBtn && isManual) {
+        syncBtn.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>Syncing...</span>`;
+        if (window.lucide) lucide.createIcons();
+      }
+
+      energySyncStatusHtml = `<span class="text-cyan-400">Syncing from Google Drive...</span>`;
+      if (currentMode === 'ENERGY') {
+        document.getElementById('dataSourceDisplay').innerHTML = energySyncStatusHtml;
+      }
+
+      const targetUrl = `${ENERGY_WEB_APP_URL}?callback=handleEnergyJsonp&_t=${Date.now()}`;
+
+      fetch(targetUrl, { method: 'GET', redirect: 'follow' })
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.text();
+        })
+        .then(text => {
+          if (syncBtn && isManual) {
+            syncBtn.innerHTML = originalBtnHtml;
+            if (window.lucide) lucide.createIcons();
+          }
+          const match = text.match(/handleEnergyJsonp\(([\s\S]*)\);?\s*$/);
+          const jsonStr = match ? match[1] : text;
+          const payload = JSON.parse(jsonStr);
+          window.handleEnergyJsonp(payload);
+        })
+        .catch(() => {
+          const oldScript = document.getElementById('energy-jsonp-script');
+          if (oldScript) oldScript.remove();
+
+          const script = document.createElement('script');
+          script.id = 'energy-jsonp-script';
+          script.src = targetUrl;
+
+          script.onerror = () => {
+            if (syncBtn && isManual) {
+              syncBtn.innerHTML = originalBtnHtml;
+              if (window.lucide) lucide.createIcons();
+            }
+            energySyncStatusHtml = `<span class="text-rose-400">Sync Blocked — Check Network / Apps Script</span>`;
+            if (currentMode === 'ENERGY') {
+              document.getElementById('dataSourceDisplay').innerHTML = energySyncStatusHtml;
+            }
+          };
+
+          document.body.appendChild(script);
+        });
+    }
+
+    window.handleEnergyJsonp = function(payload) {
+      if (!payload) return;
+
+      if (payload.status === "error") {
+        energySyncStatusHtml = `<span class="text-rose-400">API Error: ${payload.message}</span>`;
+        if (currentMode === 'ENERGY') {
+          document.getElementById('dataSourceDisplay').innerHTML = energySyncStatusHtml;
+        }
+        return;
+      }
+
+      if (Array.isArray(payload.rows)) {
+        const weeksLoaded = parseEnergyTableRows(payload.rows);
+        if (weeksLoaded > 0) {
+          energySyncStatusHtml = `<span class="text-emerald-400">${payload.fileName || 'Utility Energy KPI.xlsx'} [${payload.sheetName || 'Daily'}] (${weeksLoaded} WKs)</span>`;
+          try {
+            localStorage.setItem('factory_energy_matrix_v1', JSON.stringify({
+              energyWeeklyData,
+              energyTargets,
+              energyMaxWeek
+            }));
+          } catch (e) {}
+
+          if (currentMode === 'ENERGY') {
+            document.getElementById('dataSourceDisplay').innerHTML = energySyncStatusHtml;
+            updateLastSyncedTimestamp();
+            renderMatrix();
+          }
+        }
+      }
+    };
+
     // --- AUTO REFRESH ---
     function initAutoRefreshTimer() {
       if (refreshIntervalHandle) clearInterval(refreshIntervalHandle);
@@ -1600,6 +1941,11 @@
 
       if (!thead || !tbody) return;
 
+      if (currentMode === 'ENERGY') {
+        renderEnergyMatrix(thead, tbody, weekSpanBadge, displayedCount);
+        return;
+      }
+
       const dataset = getActiveDataset();
       const targets = getActiveTargets();
       const selectedSet = getActiveSelectedSet();
@@ -1607,7 +1953,6 @@
 
       if (weekSpanBadge) weekSpanBadge.textContent = `WK1 - WK${maxWk}`;
 
-      // Build Header: MACHINE / LINE + WK1..WK[maxWk]
       let theadHtml = `<tr>
         <th class="sticky-corner bg-[#091220] px-4 py-2.5 text-cyan-300 border-r border-slate-700 text-xs font-bold tracking-wider w-44 min-w-[176px]">
           MACHINE / LINE
@@ -1618,7 +1963,6 @@
       theadHtml += `</tr>`;
       thead.innerHTML = theadHtml;
 
-      // Filter & Sort
       let lineNames = Object.keys(dataset);
       lineNames.sort((a, b) => {
         const itemA = dataset[a];
@@ -1685,6 +2029,56 @@
       tbody.innerHTML = tbodyHtml;
     }
 
+    function renderEnergyMatrix(thead, tbody, weekSpanBadge, displayedCount) {
+      const maxWk = energyMaxWeek;
+      if (weekSpanBadge) weekSpanBadge.textContent = `WK1 - WK${maxWk}`;
+      if (displayedCount) displayedCount.textContent = ENERGY_KPI_ROWS.length;
+
+      let theadHtml = `<tr>
+        <th class="sticky-corner bg-[#091220] px-4 py-2.5 text-cyan-300 border-r border-slate-700 text-xs font-bold tracking-wider w-48 min-w-[190px]">
+          ENERGY & UTILITY KPI
+        </th>`;
+      for (let w = 1; w <= maxWk; w++) {
+        theadHtml += `<th class="px-2 py-2.5 text-center text-slate-300 border-r border-slate-800 text-[11px] font-bold min-w-[64px]">WK${w}</th>`;
+      }
+      theadHtml += `</tr>`;
+      thead.innerHTML = theadHtml;
+
+      let tbodyHtml = '';
+      ENERGY_KPI_ROWS.forEach(kpi => {
+        const isIntensity = kpi.type === 'intensity';
+        const targetVal = isIntensity ? energyTargets[kpi.targetKey] : null;
+
+        tbodyHtml += `<tr class="hover:bg-slate-800/40 transition">
+          <td class="sticky-col bg-[#0b1628] px-3 py-2.5 border-r border-b border-slate-700/80 text-xs font-semibold text-slate-200 truncate">
+            <div class="flex items-center justify-between">
+              <span class="truncate">${kpi.label}</span>
+              ${isIntensity ? `<span class="text-[10px] text-cyan-400 font-normal ml-1">(≤ ${targetVal.toFixed(3)})</span>` : ''}
+            </div>
+          </td>`;
+
+        for (let w = 1; w <= maxWk; w++) {
+          const wkObj = energyWeeklyData[w];
+          const val = wkObj ? wkObj[kpi.key] : undefined;
+
+          if (val === undefined || val === null || isNaN(val) || (isIntensity && wkObj.productTon <= 0)) {
+            tbodyHtml += `<td class="text-center px-1 py-2 border-r border-b border-slate-200/80 text-[11px] font-bold cell-empty">-</td>`;
+          } else if (!isIntensity) {
+            const formatted = val.toLocaleString('en-US', { minimumFractionDigits: kpi.decimals, maximumFractionDigits: kpi.decimals });
+            tbodyHtml += `<td title="${kpi.label} (WK${w}): ${formatted} ${kpi.unit}" class="text-center px-1 py-2 border-r border-b border-slate-800/80 text-[11px] font-bold cell-volume">${formatted}</td>`;
+          } else {
+            const isPass = val <= targetVal;
+            const cellClass = isPass ? 'cell-pass' : 'cell-fail';
+            tbodyHtml += `<td title="${kpi.label} (WK${w}): ${val.toFixed(3)} ${kpi.unit} (Target ≤ ${targetVal.toFixed(3)})" class="text-center px-1 py-2 border-r border-b border-slate-800/80 text-[11px] font-bold ${cellClass}">${val.toFixed(3)}</td>`;
+          }
+        }
+
+        tbodyHtml += `</tr>`;
+      });
+
+      tbody.innerHTML = tbodyHtml;
+    }
+
     function scrollToLatestWeek() {
       const container = document.getElementById('matrixScrollContainer');
       if (container) {
@@ -1696,6 +2090,7 @@
 
     // --- CHECKBOXES & DROPDOWN ---
     function populateMachineCheckboxes() {
+      if (currentMode === 'ENERGY') return;
       const container = document.getElementById('machineCheckboxList');
       if (!container) return;
 
@@ -1790,12 +2185,35 @@
     // --- MODALS ---
     function openTargetModal() {
       const modal = document.getElementById('targetModal');
+      const title = document.getElementById('targetModalTitle');
+      const desc = document.getElementById('targetModalDesc');
       const listContainer = document.getElementById('modalMachineTargetsList');
-      const metricBadge = document.getElementById('modalTargetMetricBadge');
-      metricBadge.textContent = currentMode;
 
-      if (listContainer) {
-        listContainer.innerHTML = '';
+      if (!listContainer) return;
+      listContainer.innerHTML = '';
+
+      if (currentMode === 'ENERGY') {
+        title.textContent = "Set Energy & Water Intensity Targets";
+        desc.innerHTML = `กำหนดค่าเป้าหมายสูงสุด (Maximum Target) สำหรับเกณฑ์ประเมินผลสีเขียว/แดงในโหมด <b class="text-cyan-300">ENERGY</b>:`;
+        listContainer.innerHTML = `
+          <div class="flex items-center justify-between p-2 bg-slate-950/60 rounded border border-slate-800">
+            <div>
+              <div class="font-bold text-slate-200">GJ / Ton Target</div>
+              <div class="text-[10px] text-slate-400">Pass (Green) if ≤ Target (GJ/Ton)</div>
+            </div>
+            <input type="number" step="0.001" id="energyTargetGjInput" value="${energyTargets.gjPerTon}" class="w-24 px-2 py-1 bg-slate-900 border border-cyan-700 rounded text-amber-400 font-bold text-center text-xs">
+          </div>
+          <div class="flex items-center justify-between p-2 bg-slate-950/60 rounded border border-slate-800">
+            <div>
+              <div class="font-bold text-slate-200">Water / Ton Target</div>
+              <div class="text-[10px] text-slate-400">Pass (Green) if ≤ Target (m³/Ton)</div>
+            </div>
+            <input type="number" step="0.001" id="energyTargetWaterInput" value="${energyTargets.waterPerTon}" class="w-24 px-2 py-1 bg-slate-900 border border-cyan-700 rounded text-amber-400 font-bold text-center text-xs">
+          </div>
+        `;
+      } else {
+        title.textContent = "Set Machine Targets";
+        desc.innerHTML = `ปรับแต่งค่าเป้าหมาย (Target %) แยกเฉพาะเจาะจงแต่ละเครื่องจักรสำหรับโหมด <b class="text-cyan-300">${currentMode}</b>:`;
         const dataset = getActiveDataset();
         const targets = getActiveTargets();
         const defaultTgt = currentMode === 'OR' ? orGlobalTarget : 68.0;
@@ -1822,25 +2240,47 @@
     }
 
     function saveIndividualTargets() {
-      const dataset = getActiveDataset();
-      const targets = getActiveTargets();
+      if (currentMode === 'ENERGY') {
+        const gj = parseFloat(document.getElementById('energyTargetGjInput').value);
+        const wt = parseFloat(document.getElementById('energyTargetWaterInput').value);
+        if (!isNaN(gj) && gj > 0) energyTargets.gjPerTon = gj;
+        if (!isNaN(wt) && wt > 0) energyTargets.waterPerTon = wt;
+        try {
+          localStorage.setItem('factory_energy_matrix_v1', JSON.stringify({
+            energyWeeklyData,
+            energyTargets,
+            energyMaxWeek
+          }));
+        } catch (e) {}
+      } else {
+        const dataset = getActiveDataset();
+        const targets = getActiveTargets();
 
-      Object.keys(dataset).forEach(name => {
-        const inputId = `tgt_input_${name.replace(/[^a-zA-Z0-9]/g, '_')}`;
-        const inputElem = document.getElementById(inputId);
-        if (inputElem) {
-          const val = parseFloat(inputElem.value);
-          if (!isNaN(val)) {
-            targets[name] = val;
+        Object.keys(dataset).forEach(name => {
+          const inputId = `tgt_input_${name.replace(/[^a-zA-Z0-9]/g, '_')}`;
+          const inputElem = document.getElementById(inputId);
+          if (inputElem) {
+            const val = parseFloat(inputElem.value);
+            if (!isNaN(val)) {
+              targets[name] = val;
+            }
           }
-        }
-      });
+        });
+      }
       closeTargetModal();
       renderMatrix();
     }
 
     function openPasteModal() {
-      document.getElementById('pasteModalMetricBadge').textContent = currentMode;
+      const desc = document.getElementById('pasteModalDesc');
+      const ta = document.getElementById('pasteTextArea');
+      if (currentMode === 'ENERGY') {
+        desc.innerHTML = `คัดลอกตารางข้อมูลรายวันจาก Excel / Google Sheets (คอลัมน์ <b>Date, Electrical, Solar, Wood Pellet, Water, Ton KN, Ton LSDS, Total Elect, GJ Elec, GJ Wood, GJ Total, TON</b>) มาวางด้านล่าง:`;
+        ta.placeholder = "Date\tElectrical\tSolar\tWood Pellet\tWater\tTon KN\tTon LSDS\tTotal Elect\tGJ Elec\tGJ Wood\tGJ Total\tTON";
+      } else {
+        desc.innerHTML = `คัดลอกตารางจาก Google Sheets หรือ CSV มาวางเพื่ออัปเดตข้อมูลของโหมด <b class="text-cyan-300">${currentMode}</b>:`;
+        ta.placeholder = "DATE\tWeek\tPlant\tLINE\tSHIFT\tPLAN\tACTUAL";
+      }
       document.getElementById('pasteModal').classList.remove('hidden');
     }
 
@@ -1852,7 +2292,16 @@
       const rawText = document.getElementById('pasteTextArea').value.trim();
       if (!rawText) return;
 
-      if (currentMode === 'OEE' && (rawText.includes(',') || rawText.includes('Week No.'))) {
+      if (currentMode === 'ENERGY') {
+        const rows = rawText.split(/\r?\n/).map(line => line.includes('\t') ? line.split('\t') : line.split(','));
+        const weeksLoaded = parseEnergyTableRows(rows);
+        if (weeksLoaded > 0) {
+          energySyncStatusHtml = `<span class="text-cyan-300">Manual Pasted Data (${weeksLoaded} WKs)</span>`;
+          document.getElementById('dataSourceDisplay').innerHTML = energySyncStatusHtml;
+          renderMatrix();
+          updateLastSyncedTimestamp();
+        }
+      } else if (currentMode === 'OEE' && (rawText.includes(',') || rawText.includes('Week No.'))) {
         parseOeeCSV(rawText, false);
       } else {
         const lines = rawText.split(/\r?\n/);
@@ -1881,6 +2330,102 @@
         }
       }
       closePasteModal();
+    }
+
+    // --- EXPORT CURRENT TABLE TO EXCEL (.XLSX) ---
+    function exportCurrentTableToExcel() {
+      const maxWk = getActiveMaxWeek();
+      const rows = [];
+      const dateStamp = new Date().toISOString().slice(0, 10);
+      let fileName = `Scorecard_${currentMode}_${dateStamp}.xlsx`;
+      let sheetName = `${currentMode}_Weekly`;
+
+      if (currentMode === 'ENERGY') {
+        const header = ['ENERGY & UTILITY KPI', 'Target'];
+        for (let w = 1; w <= maxWk; w++) header.push(`WK${w}`);
+        rows.push(header);
+
+        ENERGY_KPI_ROWS.forEach(kpi => {
+          const isIntensity = kpi.type === 'intensity';
+          const targetVal = isIntensity ? energyTargets[kpi.targetKey] : null;
+          const row = [
+            kpi.label,
+            isIntensity ? `<= ${targetVal.toFixed(3)}` : '-'
+          ];
+
+          for (let w = 1; w <= maxWk; w++) {
+            const wkObj = energyWeeklyData[w];
+            const val = wkObj ? wkObj[kpi.key] : undefined;
+            if (val === undefined || val === null || isNaN(val) || (isIntensity && wkObj.productTon <= 0)) {
+              row.push('');
+            } else {
+              row.push(Number(val.toFixed(kpi.decimals)));
+            }
+          }
+          rows.push(row);
+        });
+      } else {
+        const dataset = getActiveDataset();
+        const targets = getActiveTargets();
+        const selectedSet = getActiveSelectedSet();
+
+        const header = ['AREA', 'MACHINE / LINE', 'TARGET (%)'];
+        for (let w = 1; w <= maxWk; w++) header.push(`WK${w}`);
+        rows.push(header);
+
+        let lineNames = Object.keys(dataset);
+        lineNames.sort((a, b) => {
+          const areaA = dataset[a].area || 'KN';
+          const areaB = dataset[b].area || 'KN';
+          if (areaA !== areaB) return areaA === 'KN' ? -1 : 1;
+          const idxA = FACTORY_LINES.findIndex(l => l.name === a);
+          const idxB = FACTORY_LINES.findIndex(l => l.name === b);
+          if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+          if (idxA !== -1) return -1;
+          if (idxB !== -1) return 1;
+          return a.localeCompare(b);
+        });
+
+        const filteredLines = lineNames.filter(name => {
+          const item = dataset[name];
+          if (currentAreaFilter !== 'ALL' && item.area !== currentAreaFilter) return false;
+          if (!selectedSet.has(name)) return false;
+          if (searchQuery && !name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+          return true;
+        });
+
+        filteredLines.forEach(name => {
+          const item = dataset[name];
+          const target = targets[name] !== undefined ? targets[name] : (currentMode === 'OR' ? orGlobalTarget : 68.0);
+          const row = [item.area || 'KN', name, Number(target.toFixed(1))];
+
+          for (let w = 1; w <= maxWk; w++) {
+            const val = item.weeks[w] !== undefined ? item.weeks[w] : 0.0;
+            row.push(val > 0 ? Number(val.toFixed(2)) : '');
+          }
+          rows.push(row);
+        });
+
+        fileName = `Scorecard_${currentMode}_${currentAreaFilter}_${dateStamp}.xlsx`;
+      }
+
+      if (window.XLSX) {
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        ws['!cols'] = currentMode === 'ENERGY'
+          ? [{ wch: 24 }, { wch: 12 }, ...Array.from({ length: maxWk }, () => ({ wch: 10 }))]
+          : [{ wch: 8 }, { wch: 18 }, { wch: 12 }, ...Array.from({ length: maxWk }, () => ({ wch: 9 }))];
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        XLSX.writeFile(wb, fileName);
+      } else {
+        // Fallback to CSV download if offline
+        const csvContent = "\uFEFF" + rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = fileName.replace('.xlsx', '.csv');
+        link.click();
+      }
     }
 
     // Global Click Listener
@@ -1932,9 +2477,10 @@
         });
       }
 
-      // Initial live syncs
+      // Initial live syncs (คงการเรียก OR และ OEE ตามต้นฉบับ 100% + เพิ่ม ENERGY)
       syncGoogleSheets();
       syncGoogleDrive();
+      syncEnergyData();
 
       initAutoRefreshTimer();
     };
